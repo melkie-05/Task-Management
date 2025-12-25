@@ -1,0 +1,378 @@
+openapi: 3.0.0
+info:
+  title: Task Management API
+  version: "1.0.0"
+  description: API for Task Management app with RBAC (users, roles, permissions, activity logs)
+servers:
+  - url: http://localhost:3000
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        roles:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            type: string
+      example:
+        id: 1
+        name: "Admin User"
+        email: "admin@example.com"
+        roles: ["admin"]
+        permissions: ["manage_users", "view_activity_log"]
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+      example: { email: "admin@example.com", password: "Password123!" }
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+    CreateUser:
+      type: object
+      required: [name, email, password]
+      properties:
+        name: { type: string }
+        email: { type: string }
+        password: { type: string }
+        roles:
+          type: array
+          items: { type: integer }
+      example:
+        {
+          name: "Alice",
+          email: "alice@example.com",
+          password: "P@ssw0rd",
+          roles: [2],
+        }
+    Role:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+    Permission:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+    ActivityLog:
+      type: object
+      properties:
+        id: { type: integer }
+        user_id: { type: integer, nullable: true }
+        action: { type: string }
+        meta: { type: object }
+        resource_type: { type: string, nullable: true }
+        resource_id: { type: integer, nullable: true }
+        severity: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+paths:
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and receive JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: token + user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user (includes roles & permissions)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+  /api/admin/users:
+    get:
+      tags: [Users]
+      summary: List users (admin only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: user list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+    post:
+      tags: [Users]
+      summary: Create user (admin)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUser"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "409":
+          description: Email already in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/users/{id}:
+    put:
+      tags: [Users]
+      summary: Update user (self or admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                email: { type: string }
+                password: { type: string }
+              example:
+                {
+                  name: "New Name",
+                  email: "new@example.com",
+                  password: "NewPass123!",
+                }
+      responses:
+        "200":
+          description: Updated
+        "403":
+          description: Forbidden
+  /api/admin/users/{id}/roles:
+    post:
+      tags: [Users]
+      summary: Assign role to user (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                roleId: { type: integer }
+              example: { roleId: 2 }
+      responses:
+        "200": { description: Role assigned }
+    delete:
+      tags: [Users]
+      summary: Remove role from user (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                roleId: { type: integer }
+              example: { roleId: 2 }
+      responses:
+        "200": { description: Role removed }
+  /api/admin/roles:
+    get:
+      tags: [Roles]
+      summary: List roles
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Role"
+    post:
+      tags: [Roles]
+      summary: Create role
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+              example: { name: "manager" }
+      responses:
+        "201": { description: role created }
+  /api/admin/roles/{id}/permissions:
+    post:
+      tags: [Roles]
+      summary: Assign permission to role
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                permissionId: { type: integer }
+              example: { permissionId: 3 }
+      responses:
+        "200": { description: permission assigned }
+    delete:
+      tags: [Roles]
+      summary: Remove permission from role
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                permissionId: { type: integer }
+              example: { permissionId: 3 }
+      responses:
+        "200": { description: permission removed }
+  /api/admin/permissions:
+    get:
+      tags: [Permissions]
+      summary: List permissions
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Permission"
+    post:
+      tags: [Permissions]
+      summary: Create permission
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+              example: { name: "view_activity_log" }
+      responses:
+        "201": { description: permission created }
+  /api/admin/activity-logs:
+    get:
+      tags: [Activity]
+      summary: List activity logs
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityLog"
+  /api/admin/activity-logs/{id}:
+    get:
+      tags: [Activity]
+      summary: Get activity log detail
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityLog"
+        "404":
+          {
+            description: not found,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ErrorResponse" } },
+              },
+          }
